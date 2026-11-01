@@ -34,6 +34,7 @@ th:nth-child(2),td:nth-child(2){text-align:left;width:100%}th{color:var(--mut);f
 td.pt{font-weight:700;color:var(--ac)}
 .champ{background:var(--win);border:1px solid var(--ac);border-radius:12px;padding:12px;text-align:center;font-weight:700;margin:8px 0}
 .top{display:flex;gap:8px;align-items:center;justify-content:space-between;margin:6px 0}.mut{color:var(--mut)}
+.a.btn{}a.btn{display:inline-block;border-radius:10px;padding:8px 12px;font-weight:600;text-decoration:none;background:var(--ac);color:var(--acx)}
 .auth{display:grid;gap:8px;margin-top:20px}
 </style>
 </head>
@@ -45,7 +46,7 @@ const SB_URL='https://scecbouljpxrslamebsb.supabase.co',SB_KEY='sb_publishable_f
 const sb=supabase.createClient(SB_URL,SB_KEY);
 const $=s=>document.querySelector(s);
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-let U=null,isAdmin=false,P=[],M=[],T={},CT={},tab='cruces',ed=null,draft={},mine=false,pend=false,me='',sub=null,tm=null;
+let U=null,isAdmin=false,P=[],M=[],T={},CT={},PH={},GL='',tab='cruces',ed=null,draft={},mine=false,pend=false,me='',sub=null,tm=null;
 const pn=id=>(P.find(p=>p.id===id)||{}).name||'—';
 const ko=()=>T.format==='ko';
 const rl=r=>{if(!ko())return 'Fecha '+r;const n=T.rounds-r;return n===0?'Final':n===1?'Semifinales':n===2?'Cuartos de final':'Ronda '+r};
@@ -59,6 +60,8 @@ async function load(){
   const [p,m,t]=await Promise.all([sb.from('players').select('*'),sb.from('matches').select('*'),sb.from('tournament').select('*').eq('id',1).maybeSingle()]);
   P=p.data||[];M=m.data||[];T=t.data||{};
   if(isAdmin){const c=await sb.from('contacts').select('*');CT={};(c.data||[]).forEach(x=>CT[x.user_id]=x.email)}
+  const ph=await sb.from('player_phones').select('*');PH={};(ph.data||[]).forEach(x=>PH[x.player_id]=x.phone);
+  const g=await sb.from('group_link').select('url').eq('id',1).maybeSingle();GL=(g.data&&g.data.url)||'';
   render();
 }
 async function start(){
@@ -80,6 +83,7 @@ function render(){
   const fmt=!T.started?'Inscripciones abiertas':(ko()?'Eliminación directa':'Liga · todos contra todos');
   let h=`<div class="top"><h1 ${isAdmin?'data-act="rename" style="cursor:pointer"':''}>${esc(T.name||'Torneo de Tenis')}</h1><button class="sm" data-act="out">Salir</button></div><div class="sub">${fmt} · ${ap.length} jugadores${isAdmin?' · organizador':''}</div>`;
   if(me&&T.started)h+=`<div class="top"><span class="mut">Eres ${esc(pn(me))}</span><button class="sm ${mine?'on':''}" data-act="mine">Solo mis partidos</button></div>`;
+  if(GL&&(me||isAdmin))h+=`<div class="top"><a class="btn" href="${esc(GL)}" target="_blank" rel="noopener">Unirme al grupo de WhatsApp</a></div>`;
   h+=`<div class="tabs">${[['cruces','Cruces'],['ranking','Ranking'],['jug','Jugadores']].map(([k,l])=>`<button class="${tab===k?'on':''}" data-act="tab" data-v="${k}">${l}${k==='cruces'&&npend?' ('+npend+')':''}${k==='jug'&&nreg?' ('+nreg+')':''}</button>`).join('')}</div>`;
   h+=tab==='cruces'?vCruces():tab==='ranking'?vRank():vJug();
   $('#app').innerHTML=h;
@@ -142,6 +146,7 @@ function btns(m){
     if(isAdmin)b+=B('approve','Aprobar','pri')+B('reject','Rechazar');
     else if(isP&&m.prop_by===me)b+=B('reject','Retirar');
   }
+  if(isAdmin&&m.status!=='done')[m.p1,m.p2].forEach(pid=>{if(PH[pid])b+=B('wa','WhatsApp a '+esc(pn(pid).split(' ')[0]),'',` data-w="${pid}"`)});
   if(isAdmin||isP)b+=B('sch',m.date?'Reprogramar':'Programar');
   return b?`<div class="act">${b}</div>`:'';
 }
@@ -168,20 +173,29 @@ function vRank(){
 function vJug(){
   let h='';
   const mine_=P.find(p=>p.user_id===U.id);
-  if(!mine_&&!T.started)h+=`<div class="card"><b>Inscríbete</b><div class="row"><input id="rn" placeholder="Tu nombre" maxlength="40"><button class="pri" data-act="reg">Solicitar</button></div><div class="meta">El organizador debe aprobar tu solicitud.</div></div>`;
+  if(!mine_&&!T.started)h+=`<div class="card"><b>Inscríbete</b><input id="rn" placeholder="Tu nombre" maxlength="40"><div class="row"><input id="rp" type="tel" placeholder="Celular (+56 9…)" maxlength="20"><button class="pri" data-act="reg">Solicitar</button></div><div class="meta">El organizador debe aprobar tu solicitud.</div></div>`;
   else if(mine_&&mine_.status==='pending')h+='<div class="card">Solicitud enviada. Espera la aprobación del organizador.</div>';
   else if(mine_&&mine_.status==='rejected')h+='<div class="card">Tu solicitud fue rechazada.</div>';
+  if(mine_&&mine_.status!=='rejected')h+=`<div class="meta">Tu celular: ${esc(PH[mine_.id]||'sin registrar')} <button class="sm" data-act="phone" data-id="${mine_.id}">Cambiar</button></div>`;
   if(isAdmin){
     const pd=P.filter(p=>p.status==='pending');
     h+='<div class="rh">Solicitudes</div>'+(pd.map(p=>`<div class="card"><div class="pl"><span>${esc(p.name)}<br><span class="mut">${esc(CT[p.user_id]||'sin correo')}</span></span><span class="act" style="margin:0"><button class="sm pri" data-act="okp" data-id="${p.id}">Aprobar</button><button class="sm" data-act="nop" data-id="${p.id}">Rechazar</button></span></div></div>`).join('')||'<p class="mut">Sin solicitudes pendientes.</p>');
-    if(!T.started)h+=`<div class="rh">Agregar jugador sin cuenta</div><div class="row"><input id="np" placeholder="Nombre" maxlength="40"><button data-act="addp">Agregar</button></div>`;
+    if(!T.started)h+=`<div class="rh">Agregar jugador sin cuenta</div><input id="np" placeholder="Nombre" maxlength="40"><div class="row"><input id="npp" type="tel" placeholder="Celular (opcional)" maxlength="20"><button data-act="addp">Agregar</button></div>`;
   }
   const ap=P.filter(p=>p.status==='approved').sort((a,b)=>a.name.localeCompare(b.name));
-  h+='<div class="rh">Inscritos</div>'+(ap.length?'<div class="card">'+ap.map(p=>`<div class="pl"><span>${esc(p.name)}</span>${isAdmin&&!T.started?`<button class="sm" data-act="delp" data-id="${p.id}">Quitar</button>`:''}</div>`).join('')+'</div>':'<p class="mut">Nadie inscrito todavía.</p>');
-  if(isAdmin)h+=`<div class="rh">Organizador</div><div class="card"><div class="act" style="margin:0"><button class="pri" data-act="draw" data-v="rr">Sortear liga (todos contra todos)</button><button class="pri" data-act="draw" data-v="ko">Sortear eliminación directa</button></div>${T.started?'<div class="act"><button data-act="reset">Reiniciar torneo (volver a inscripciones)</button></div><div class="meta">Sortear de nuevo o reiniciar borra los cruces y resultados.</div>':''}</div>`;
+  h+='<div class="rh">Inscritos</div>'+(ap.length?'<div class="card">'+ap.map(p=>`<div class="pl"><span>${esc(p.name)}${isAdmin?` <span class="mut">${esc(PH[p.id]||'sin celular')}</span> <button class="sm" data-act="phone" data-id="${p.id}">✎</button>`:''}</span>${isAdmin&&!T.started?`<button class="sm" data-act="delp" data-id="${p.id}">Quitar</button>`:''}</div>`).join('')+'</div>':'<p class="mut">Nadie inscrito todavía.</p>');
+  if(isAdmin)h+=`<div class="rh">Organizador</div><div class="card"><div class="act" style="margin:0"><button class="pri" data-act="draw" data-v="rr">Sortear liga (todos contra todos)</button><button class="pri" data-act="draw" data-v="ko">Sortear eliminación directa</button></div><div class="act"><button data-act="gmsg">Anuncio por WhatsApp</button><button data-act="gpend">Recordar pendientes</button><button data-act="glink">Enlace del grupo</button></div>${T.started?'<div class="act"><button data-act="reset">Reiniciar torneo (volver a inscripciones)</button></div><div class="meta">Sortear de nuevo o reiniciar borra los cruces y resultados.</div>':''}</div>`;
   return h;
 }
 
+const waNum=p=>{let d=String(p||'').replace(/\D/g,'');if(d.length===9&&d[0]==='9')d='56'+d;return d};
+function pendText(){
+  const open=M.filter(m=>m.status!=='done'&&canPlay(m));if(!open.length)return 'No hay partidos pendientes.';
+  const r=Math.min(...open.map(m=>m.r));
+  const L=open.filter(m=>m.r===r).sort((a,b)=>a.i-b.i).map(m=>`• ${pn(m.p1)} vs ${pn(m.p2)}: ${m.date?fd(m.date)+(m.time?' '+m.time:''):'sin programar'}`);
+  return `Partidos pendientes (${rl(r)}):\n${L.join('\n')}\nPor favor programen y registren su resultado en la app.`;
+}
+const wa=(num,txt)=>window.open('https://wa.me/'+(num||'')+'?text='+encodeURIComponent(txt),'_blank');
 const shuffle=a=>{a=[...a];for(let i=a.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[a[i],a[j]]=[a[j],a[i]]}return a};
 const mk=(r,i,p1,p2)=>({id:`m_${r}_${i}`,r,i,p1:p1||null,p2:p2||null,status:'pend'});
 async function draw(fmt){
@@ -232,15 +246,25 @@ document.addEventListener('click',async e=>{
   else if(act==='mine'){mine=!mine;render()}
   else if(act==='reg'){
     const n=($('#rn').value||'').trim();if(!n)return alert('Escribe tu nombre.');
-    const a=await sb.from('players').insert({user_id:U.id,name:n});if(a.error)return alert(a.error.message);
+    const ph=($('#rp').value||'').trim();if(waNum(ph).length<8)return alert('Escribe tu celular, por ejemplo +56 9 1234 5678.');const a=await sb.from('players').insert({user_id:U.id,name:n}).select('id').single();if(a.error)return alert(a.error.message);await sb.from('player_phones').upsert({player_id:a.data.id,phone:ph});
     await sb.from('contacts').upsert({user_id:U.id,email:U.email});load();
   }
   else if(act==='okp'||act==='nop'){const r=await sb.from('players').update({status:act==='okp'?'approved':'rejected'}).eq('id',id);if(r.error)alert(r.error.message);load()}
-  else if(act==='addp'){const n=($('#np').value||'').trim();if(!n)return;const r=await sb.from('players').insert({name:n,status:'approved'});if(r.error)alert(r.error.message);load()}
+  else if(act==='addp'){const n=($('#np').value||'').trim();if(!n)return;const r=await sb.from('players').insert({name:n,status:'approved'}).select('id').single();if(r.error)alert(r.error.message);else{const ph=($('#npp').value||'').trim();if(ph)await sb.from('player_phones').upsert({player_id:r.data.id,phone:ph})}load()}
   else if(act==='delp'){const r=await sb.from('players').delete().eq('id',id);if(r.error)alert(r.error.message);load()}
   else if(act==='rename'){const n=prompt('Nombre del torneo',T.name||'Torneo de Tenis');if(n&&n.trim()){await sb.from('tournament').update({name:n.trim()}).eq('id',1);load()}}
   else if(act==='draw')draw(t.dataset.v);
   else if(act==='reset'){if(confirm('¿Reiniciar el torneo? Se borran cruces y resultados; los jugadores se mantienen.')){await sb.from('matches').delete().neq('id','');await sb.from('tournament').update({started:false,format:null,rounds:null}).eq('id',1);tab='jug';load()}}
+  else if(act==='phone'){const v=prompt('Celular con código de país (ej. +56 9 1234 5678)',PH[id]||'');if(v&&v.trim()){const r=await sb.from('player_phones').upsert({player_id:id,phone:v.trim()});if(r.error)alert(r.error.message);load()}}
+  else if(act==='wa'){
+    const w=t.dataset.w,o=m.p1===w?m.p2:m.p1,nm1=pn(w).split(' ')[0];
+    const when=m.date?`${fd(m.date)}${m.time?' a las '+m.time:''}${m.court?' en '+m.court:''}`:'';
+    const def=when?`Hola ${nm1}, te recuerdo tu partido (${rl(m.r)}) contra ${pn(o)}: ${when}. ¿Confirmas?`:`Hola ${nm1}, tienes pendiente tu partido (${rl(m.r)}) contra ${pn(o)}. ¿Qué día y hora te acomodan? Prográmalo en la app.`;
+    const txt=prompt('Mensaje',def);if(txt)wa(waNum(PH[w]),txt);
+  }
+  else if(act==='gmsg'){const txt=prompt('Anuncio para el grupo','');if(txt)wa('',txt)}
+  else if(act==='gpend'){const txt=prompt('Recordatorio para el grupo',pendText());if(txt)wa('',txt)}
+  else if(act==='glink'){const v=prompt('Pega el enlace de invitación del grupo (https://chat.whatsapp.com/…)',GL);if(v!==null){const u=v.trim();if(u&&!/^https:\/\/chat\.whatsapp\.com\//.test(u))return alert('El enlace debe empezar con https://chat.whatsapp.com/');const r=await sb.from('group_link').update({url:u||null}).eq('id',1);if(r.error)alert(r.error.message);load()}}
   else if(act==='res'){ed={id,mode:'res'};draft[id]={};const s=m.status==='prop'?(m.prop_sets||[]):(m.sets||[]);[0,1,2].forEach(j=>{if(s[j]){draft[id]['a'+j]=s[j][0];draft[id]['b'+j]=s[j][1]}});render()}
   else if(act==='sch'){ed={id,mode:'sch'};draft[id]={date:m.date||'',time:m.time||'',court:m.court||''};render()}
   else if(act==='cancel'){ed=null;render()}
