@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Torneo de Tenis</title>
+<style>
+:root{--bg:#f6f7f4;--card:#fff;--tx:#1b2418;--mut:#6b7566;--ac:#2f7d32;--acx:#fff;--ln:#e1e5dc;--win:#e8f3e4;--wa:#b26a00;color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--bg:#12160f;--card:#1c2218;--tx:#e9eee4;--mut:#9aa595;--ac:#6fcf73;--acx:#0e1a0e;--ln:#2e362a;--win:#233322;--wa:#e0a040;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding:env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0)}
+.w{max-width:640px;margin:0 auto;padding:14px 14px 80px}
+h1{font-size:20px;margin:4px 0 2px}.sub{color:var(--mut);font-size:13px;margin-bottom:10px}
+.tabs{display:flex;gap:6px;position:sticky;top:0;background:var(--bg);padding:8px 0;z-index:5}.tabs button{flex:1}
+button,input{font:inherit;color:var(--tx)}
+button{border:1px solid var(--ln);background:var(--card);border-radius:10px;padding:8px 12px;cursor:pointer}
+button.on,button.pri{background:var(--ac);color:var(--acx);border-color:var(--ac);font-weight:600}
+button.sm{padding:5px 9px;font-size:13px}
+input{border:1px solid var(--ln);background:var(--card);border-radius:8px;padding:8px;min-width:0;width:100%}
+.card{background:var(--card);border:1px solid var(--ln);border-radius:12px;padding:10px 12px;margin:8px 0}
+.rh{margin:16px 0 4px;font-weight:700;color:var(--mut);font-size:12px;text-transform:uppercase;letter-spacing:.06em}
+.pl{display:flex;justify-content:space-between;align-items:center;padding:3px 0;gap:8px}
+.pl.win{font-weight:700}.pl.win span:first-child::after{content:" ✓";color:var(--ac)}
+.sc b{display:inline-block;min-width:22px;text-align:center}
+.meta{font-size:12px;color:var(--mut);margin-top:4px}.rp{color:var(--wa)}
+.act{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+.ed{border-top:1px dashed var(--ln);margin-top:8px;padding-top:8px;display:grid;gap:6px}
+.ed .r{display:flex;gap:6px;align-items:center}.ed .r span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ed input[type=number]{width:54px;text-align:center}
+.row{display:flex;gap:8px;margin:6px 0}
+.tw{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{padding:7px 5px;text-align:center;border-bottom:1px solid var(--ln);white-space:nowrap}
+th:nth-child(2),td:nth-child(2){text-align:left;width:100%}th{color:var(--mut);font-size:12px}
+td.pt{font-weight:700;color:var(--ac)}
+.champ{background:var(--win);border:1px solid var(--ac);border-radius:12px;padding:12px;text-align:center;font-weight:700;margin:8px 0}
+.top{display:flex;gap:8px;align-items:center;justify-content:space-between;margin:6px 0}.mut{color:var(--mut)}
+.auth{display:grid;gap:8px;margin-top:20px}
+</style>
+</head>
+<body>
+<div class="w"><div id="app"><p class="mut">Cargando…</p></div></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script>
+const SB_URL='https://scecbouljpxrslamebsb.supabase.co',SB_KEY='sb_publishable_fQChYEBDU0ZTwNYNNY03NQ_JmqbvHIK';
+const sb=supabase.createClient(SB_URL,SB_KEY);
+const $=s=>document.querySelector(s);
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let U=null,isAdmin=false,P=[],M=[],T={},CT={},tab='cruces',ed=null,draft={},mine=false,pend=false,me='',sub=null,tm=null;
+const pn=id=>(P.find(p=>p.id===id)||{}).name||'—';
+const ko=()=>T.format==='ko';
+const rl=r=>{if(!ko())return 'Fecha '+r;const n=T.rounds-r;return n===0?'Final':n===1?'Semifinales':n===2?'Cuartos de final':'Ronda '+r};
+const nm=(m,k)=>{const id=k===1?m.p1:m.p2;return id?pn(id):(m.status==='bye'?'Libre (bye)':'Por definir')};
+const canPlay=m=>m.p1&&m.p2&&m.status!=='bye';
+const fd=d=>{if(!d)return '';const [y,mo,da]=d.split('-');return da+'/'+mo+'/'+y};
+const sorted=()=>[...M].sort((a,b)=>a.r-b.r||a.i-b.i);
+const wos=(m,w)=>w===m.p1?[[6,0],[6,0]]:[[0,6],[0,6]];
+
+async function load(){
+  const [p,m,t]=await Promise.all([sb.from('players').select('*'),sb.from('matches').select('*'),sb.from('tournament').select('*').eq('id',1).maybeSingle()]);
+  P=p.data||[];M=m.data||[];T=t.data||{};
+  if(isAdmin){const c=await sb.from('contacts').select('*');CT={};(c.data||[]).forEach(x=>CT[x.user_id]=x.email)}
+  render();
+}
+async function start(){
+  if(!U){render();return}
+  isAdmin=!!(await sb.rpc('is_admin')).data;
+  await load();
+  if(!sub)sub=sb.channel('t').on('postgres_changes',{event:'*',schema:'public'},()=>{clearTimeout(tm);tm=setTimeout(load,300)}).subscribe();
+}
+sb.auth.onAuthStateChange((_e,s)=>{U=s?s.user:null;if(!U){sub=null;isAdmin=false}start()});
+
+function render(){
+  const a=document.activeElement;
+  if(a&&a.tagName==='INPUT'&&$('#app').contains(a)&&U){pend=true;return}
+  pend=false;
+  if(!U){$('#app').innerHTML=`<h1>Torneo de Tenis</h1><div class="sub">Entra con tu correo para participar</div><div class="auth"><input id="em" type="email" placeholder="Correo" autocomplete="email"><input id="pw" type="password" placeholder="Contraseña (mínimo 6)" autocomplete="current-password"><button class="pri" data-act="in">Entrar</button><button data-act="up">Crear cuenta</button></div>`;return}
+  const mp=P.find(p=>p.user_id===U.id&&p.status==='approved');me=mp?mp.id:'';
+  const npend=isAdmin?M.filter(m=>m.status==='conf').length:0,nreg=isAdmin?P.filter(p=>p.status==='pending').length:0;
+  const ap=P.filter(p=>p.status==='approved');
+  const fmt=!T.started?'Inscripciones abiertas':(ko()?'Eliminación directa':'Liga · todos contra todos');
+  let h=`<div class="top"><h1 ${isAdmin?'data-act="rename" style="cursor:pointer"':''}>${esc(T.name||'Torneo de Tenis')}</h1><button class="sm" data-act="out">Salir</button></div><div class="sub">${fmt} · ${ap.length} jugadores${isAdmin?' · organizador':''}</div>`;
+  if(me&&T.started)h+=`<div class="top"><span class="mut">Eres ${esc(pn(me))}</span><button class="sm ${mine?'on':''}" data-act="mine">Solo mis partidos</button></div>`;
+  h+=`<div class="tabs">${[['cruces','Cruces'],['ranking','Ranking'],['jug','Jugadores']].map(([k,l])=>`<button class="${tab===k?'on':''}" data-act="tab" data-v="${k}">${l}${k==='cruces'&&npend?' ('+npend+')':''}${k==='jug'&&nreg?' ('+nreg+')':''}</button>`).join('')}</div>`;
+  h+=tab==='cruces'?vCruces():tab==='ranking'?vRank():vJug();
+  $('#app').innerHTML=h;
+}
+
+function vCruces(){
+  if(!T.started)return '<div class="card">Aún no hay cruces. Los jugadores se inscriben en la pestaña <b>Jugadores</b>'+(isAdmin?' y tú sorteas el torneo allí.':'; el organizador hará el sorteo.')+'</div>';
+  let h='',last=0;
+  if(ko()){const f=M.find(m=>m.r===T.rounds&&m.status==='done');if(f)h+=`<div class="champ">🏆 Campeón: ${esc(pn(f.winner))}</div>`}
+  sorted().forEach(m=>{
+    if(mine&&me&&m.p1!==me&&m.p2!==me)return;
+    if(m.r!==last){h+=`<div class="rh">${rl(m.r)}</div>`;last=m.r}
+    h+=card(m);
+  });
+  return h||'<p class="mut">No hay partidos para mostrar.</p>';
+}
+
+function card(m){
+  const sc=(m.status==='prop'||m.status==='conf')?(m.prop_sets||[]):(m.sets||[]);
+  const row=(id,k)=>`<div class="pl ${id&&m.status==='done'&&m.winner===id?'win':''}"><span>${esc(nm(m,k))}</span><span class="sc">${sc.map(s=>`<b>${s[k-1]}</b>`).join('')}</span></div>`;
+  let meta='';
+  if(m.status==='bye')meta='Pasa directo a la siguiente ronda';
+  else if(m.date)meta=`${fd(m.date)}${m.time?' · '+esc(m.time):''}${m.court?' · '+esc(m.court):''}${m.reprog?` · <span class="rp">reprogramado ${m.reprog}×</span>`:''}`;
+  else meta=canPlay(m)?'Sin programar':'Esperando rivales';
+  let st='';
+  if(m.status==='prop'){const o=m.prop_by===m.p1?m.p2:m.p1;st=`<div class="meta rp">Resultado propuesto por ${esc(pn(m.prop_by))} · falta que ${esc(pn(o))} lo confirme</div>`}
+  if(m.status==='conf')st=`<div class="meta rp">${m.prop_wo?'W.O. reportado':'Confirmado por ambos jugadores'} · falta aprobación del organizador</div>`;
+  let h=`<div class="card">${row(m.p1,1)}${row(m.p2,2)}<div class="meta">${meta}${m.wo?' · W.O.':''}</div>${st}`;
+  if(canPlay(m)){
+    h+=btns(m);
+    if(ed&&ed.id===m.id){
+      const d=draft[m.id]||{};
+      if(ed.mode==='res'){
+        h+=`<div class="ed"><div class="mut" style="font-size:12px">Games por set (el set 3 puede ser súper tiebreak)</div>`;
+        [1,2].forEach(k=>{const c=k===1?'a':'b';h+=`<div class="r"><span>${esc(nm(m,k))}</span>${[0,1,2].map(j=>`<input type="number" inputmode="numeric" min="0" max="99" data-k="${c}${j}" value="${esc(d[c+j]??'')}">`).join('')}</div>`});
+        h+=`<div class="act"><button class="sm pri" data-act="saveres" data-id="${m.id}">${isAdmin?'Guardar':'Proponer'}</button><button class="sm" data-act="cancel">Cancelar</button></div></div>`;
+      }else{
+        h+=`<div class="ed"><div class="r"><input type="date" data-k="date" value="${esc(d.date||'')}"><input type="time" data-k="time" value="${esc(d.time||'')}" style="width:120px"></div><input data-k="court" placeholder="Cancha / lugar" value="${esc(d.court||'')}"><div class="act"><button class="sm pri" data-act="savesch" data-id="${m.id}">Guardar</button><button class="sm" data-act="cancel">Cancelar</button></div></div>`;
+      }
+    }
+  }
+  return h+'</div>';
+}
+
+function btns(m){
+  const isP=me&&(m.p1===me||m.p2===me),B=(a,t,c,x)=>`<button class="sm ${c||''}" data-act="${a}" data-id="${m.id}"${x||''}>${t}</button>`;
+  let b='';
+  if(m.status==='pend'&&(isAdmin||isP)){
+    b+=B('res',isAdmin?'Ingresar resultado':'Proponer resultado','pri');
+    if(isAdmin)b+=B('woa','W.O.: gana '+esc(pn(m.p1)),'',` data-w="${m.p1}"`)+B('woa','W.O.: gana '+esc(pn(m.p2)),'',` data-w="${m.p2}"`);
+    else b+=B('wono','Rival no se presentó (W.O.)')+B('woself','Me retiro (W.O.)');
+  }
+  if(m.status==='done'&&isAdmin)b+=B('res','Corregir resultado','pri');
+  if(m.status==='prop'){
+    if(isP&&m.prop_by!==me)b+=B('confirm','Confirmar','pri')+B('reject','Disputar');
+    if(isP&&m.prop_by===me)b+=B('reject','Retirar propuesta');
+    if(isAdmin)b+=B('res','Ingresar resultado');
+  }
+  if(m.status==='conf'){
+    if(isAdmin)b+=B('approve','Aprobar','pri')+B('reject','Rechazar');
+    else if(isP&&m.prop_by===me)b+=B('reject','Retirar');
+  }
+  if(isAdmin||isP)b+=B('sch',m.date?'Reprogramar':'Programar');
+  return b?`<div class="act">${b}</div>`:'';
+}
+
+function rank(){
+  const s={};P.filter(p=>p.status==='approved').forEach(p=>s[p.id]={n:p.name,pj:0,g:0,p:0,sf:0,sc:0,gf:0,gc:0,fase:0});
+  M.forEach(m=>{
+    [m.p1,m.p2].forEach(x=>{if(x&&s[x])s[x].fase=Math.max(s[x].fase,m.r)});
+    if(m.status!=='done')return;
+    const A=s[m.p1],B=s[m.p2];if(!A||!B)return;
+    A.pj++;B.pj++;
+    const W=m.winner===m.p1?A:B,L=m.winner===m.p1?B:A;W.g++;L.p++;
+    (m.sets||[]).forEach(([x,y])=>{A.gf+=x;A.gc+=y;B.gf+=y;B.gc+=x;if(x>y){A.sf++;B.sc++}else if(y>x){B.sf++;A.sc++}});
+  });
+  const k=ko();
+  return Object.values(s).map(x=>({...x,pts:x.g*3})).sort((a,b)=>(k?b.fase-a.fase:0)||b.pts-a.pts||(b.sf-b.sc)-(a.sf-a.sc)||(b.gf-b.gc)-(a.gf-a.gc));
+}
+function vRank(){
+  const r=rank();if(!r.length)return '<div class="card">Sin jugadores todavía.</div>';
+  const sg=n=>(n>0?'+':'')+n;
+  return `<div class="card tw"><table><tr><th>#</th><th>Jugador</th><th>PJ</th><th>G</th><th>P</th><th>Sets</th><th>Games</th><th>Pts</th></tr>${r.map((x,i)=>`<tr><td>${i+1}</td><td>${esc(x.n)}</td><td>${x.pj}</td><td>${x.g}</td><td>${x.p}</td><td>${sg(x.sf-x.sc)}</td><td>${sg(x.gf-x.gc)}</td><td class="pt">${x.pts}</td></tr>`).join('')}</table></div><p class="mut" style="font-size:12px">Victoria = 3 pts. Desempate: diferencia de sets y luego de games${ko()?'. En eliminación directa pesa primero la ronda alcanzada.':'.'}</p>`;
+}
+
+function vJug(){
+  let h='';
+  const mine_=P.find(p=>p.user_id===U.id);
+  if(!mine_&&!T.started)h+=`<div class="card"><b>Inscríbete</b><div class="row"><input id="rn" placeholder="Tu nombre" maxlength="40"><button class="pri" data-act="reg">Solicitar</button></div><div class="meta">El organizador debe aprobar tu solicitud.</div></div>`;
+  else if(mine_&&mine_.status==='pending')h+='<div class="card">Solicitud enviada. Espera la aprobación del organizador.</div>';
+  else if(mine_&&mine_.status==='rejected')h+='<div class="card">Tu solicitud fue rechazada.</div>';
+  if(isAdmin){
+    const pd=P.filter(p=>p.status==='pending');
+    h+='<div class="rh">Solicitudes</div>'+(pd.map(p=>`<div class="card"><div class="pl"><span>${esc(p.name)}<br><span class="mut">${esc(CT[p.user_id]||'sin correo')}</span></span><span class="act" style="margin:0"><button class="sm pri" data-act="okp" data-id="${p.id}">Aprobar</button><button class="sm" data-act="nop" data-id="${p.id}">Rechazar</button></span></div></div>`).join('')||'<p class="mut">Sin solicitudes pendientes.</p>');
+    if(!T.started)h+=`<div class="rh">Agregar jugador sin cuenta</div><div class="row"><input id="np" placeholder="Nombre" maxlength="40"><button data-act="addp">Agregar</button></div>`;
+  }
+  const ap=P.filter(p=>p.status==='approved').sort((a,b)=>a.name.localeCompare(b.name));
+  h+='<div class="rh">Inscritos</div>'+(ap.length?'<div class="card">'+ap.map(p=>`<div class="pl"><span>${esc(p.name)}</span>${isAdmin&&!T.started?`<button class="sm" data-act="delp" data-id="${p.id}">Quitar</button>`:''}</div>`).join('')+'</div>':'<p class="mut">Nadie inscrito todavía.</p>');
+  if(isAdmin)h+=`<div class="rh">Organizador</div><div class="card"><div class="act" style="margin:0"><button class="pri" data-act="draw" data-v="rr">Sortear liga (todos contra todos)</button><button class="pri" data-act="draw" data-v="ko">Sortear eliminación directa</button></div>${T.started?'<div class="act"><button data-act="reset">Reiniciar torneo (volver a inscripciones)</button></div><div class="meta">Sortear de nuevo o reiniciar borra los cruces y resultados.</div>':''}</div>`;
+  return h;
+}
+
+const shuffle=a=>{a=[...a];for(let i=a.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[a[i],a[j]]=[a[j],a[i]]}return a};
+const mk=(r,i,p1,p2)=>({id:`m_${r}_${i}`,r,i,p1:p1||null,p2:p2||null,status:'pend'});
+async function draw(fmt){
+  const ids=shuffle(P.filter(p=>p.status==='approved').map(p=>p.id));
+  if(ids.length<2)return alert('Se necesitan al menos 2 jugadores aprobados.');
+  if(T.started&&!confirm('Esto reemplaza los cruces y resultados actuales. ¿Continuar?'))return;
+  let ms=[],R=0;
+  if(fmt==='rr'){
+    const a=[...ids];if(a.length%2)a.push(null);const n=a.length;R=n-1;
+    for(let r=0;r<R;r++){let c=0;for(let i=0;i<n/2;i++){const x=a[i],y=a[n-1-i];if(x&&y)ms.push(mk(r+1,c++,x,y))}a.splice(1,0,a.pop())}
+  }else{
+    const size=2**Math.ceil(Math.log2(ids.length)),h=size/2,byes=size-ids.length;R=Math.log2(size);
+    const order=[];for(let k=0;k<h;k++)order.push(k%2?h-1-(k>>1):k>>1);
+    const bs=new Set(order.slice(0,byes)),q=[...ids];
+    for(let i=0;i<h;i++){
+      if(bs.has(i)){const p=q.shift();ms.push({...mk(1,i,p,null),status:'bye',winner:p})}
+      else ms.push(mk(1,i,q.shift(),q.shift()));
+    }
+    for(let r=2;r<=R;r++)for(let i=0;i<size/2**r;i++)ms.push(mk(r,i,null,null));
+    ms.filter(m=>m.status==='bye').forEach(b=>{const nx=ms.find(x=>x.r===2&&x.i===b.i>>1);if(nx)nx[b.i%2?'p2':'p1']=b.winner});
+  }
+  let e=(await sb.from('matches').delete().neq('id','')).error;
+  if(!e)e=(await sb.from('matches').insert(ms)).error;
+  if(!e)e=(await sb.from('tournament').update({format:fmt,rounds:R,started:true}).eq('id',1)).error;
+  if(e)return alert(e.message);
+  tab='cruces';load();
+}
+
+const rp=async(f,a)=>{const r=await sb.rpc(f,a);if(r.error)alert(r.error.message);else{ed=null;await load()}};
+function readSets(id){
+  const d=draft[id]||{};
+  return [0,1,2].map(j=>[parseInt(d['a'+j]),parseInt(d['b'+j])]).filter(s=>!isNaN(s[0])&&!isNaN(s[1]));
+}
+document.addEventListener('input',e=>{const k=e.target.dataset&&e.target.dataset.k;if(k&&ed)(draft[ed.id]=draft[ed.id]||{})[k]=e.target.value});
+document.addEventListener('focusout',()=>setTimeout(()=>{if(pend)render()},200));
+document.addEventListener('click',async e=>{
+  const t=e.target.closest('[data-act]');if(!t)return;
+  const act=t.dataset.act,id=t.dataset.id,m=id&&M.find(x=>x.id===id);
+  if(act==='in'||act==='up'){
+    const email=$('#em').value.trim(),password=$('#pw').value;
+    if(!email||password.length<6)return alert('Escribe tu correo y una contraseña de al menos 6 caracteres.');
+    const r=act==='in'?await sb.auth.signInWithPassword({email,password}):await sb.auth.signUp({email,password});
+    if(r.error)return alert(r.error.message);
+    if(act==='up'&&!r.data.session)alert('Cuenta creada. Revisa tu correo para confirmarla y luego entra.');
+  }
+  else if(act==='out')await sb.auth.signOut();
+  else if(act==='tab'){tab=t.dataset.v;ed=null;render()}
+  else if(act==='mine'){mine=!mine;render()}
+  else if(act==='reg'){
+    const n=($('#rn').value||'').trim();if(!n)return alert('Escribe tu nombre.');
+    const a=await sb.from('players').insert({user_id:U.id,name:n});if(a.error)return alert(a.error.message);
+    await sb.from('contacts').upsert({user_id:U.id,email:U.email});load();
+  }
+  else if(act==='okp'||act==='nop'){const r=await sb.from('players').update({status:act==='okp'?'approved':'rejected'}).eq('id',id);if(r.error)alert(r.error.message);load()}
+  else if(act==='addp'){const n=($('#np').value||'').trim();if(!n)return;const r=await sb.from('players').insert({name:n,status:'approved'});if(r.error)alert(r.error.message);load()}
+  else if(act==='delp'){const r=await sb.from('players').delete().eq('id',id);if(r.error)alert(r.error.message);load()}
+  else if(act==='rename'){const n=prompt('Nombre del torneo',T.name||'Torneo de Tenis');if(n&&n.trim()){await sb.from('tournament').update({name:n.trim()}).eq('id',1);load()}}
+  else if(act==='draw')draw(t.dataset.v);
+  else if(act==='reset'){if(confirm('¿Reiniciar el torneo? Se borran cruces y resultados; los jugadores se mantienen.')){await sb.from('matches').delete().neq('id','');await sb.from('tournament').update({started:false,format:null,rounds:null}).eq('id',1);tab='jug';load()}}
+  else if(act==='res'){ed={id,mode:'res'};draft[id]={};const s=m.status==='prop'?(m.prop_sets||[]):(m.sets||[]);[0,1,2].forEach(j=>{if(s[j]){draft[id]['a'+j]=s[j][0];draft[id]['b'+j]=s[j][1]}});render()}
+  else if(act==='sch'){ed={id,mode:'sch'};draft[id]={date:m.date||'',time:m.time||'',court:m.court||''};render()}
+  else if(act==='cancel'){ed=null;render()}
+  else if(act==='saveres'){
+    const s=readSets(id);if(!s.length)return alert('Ingresa al menos un set.');
+    rp(isAdmin?'admin_set_result':'propose_result',isAdmin?{mid:id,s,is_wo:false,w:null}:{mid:id,s});
+  }
+  else if(act==='savesch'){const d=draft[id]||{};if(!d.date)return alert('Elige una fecha.');rp('schedule_match',{mid:id,d:d.date,tm:d.time||'',ct:(d.court||'').trim()})}
+  else if(act==='wono')rp('report_wo',{mid:id,kind:'noshow'});
+  else if(act==='woself')rp('report_wo',{mid:id,kind:'withdraw'});
+  else if(act==='woa'){const w=t.dataset.w;if(confirm('¿Registrar W.O. a favor de '+pn(w)+'?'))rp('admin_set_result',{mid:id,s:wos(m,w),is_wo:true,w})}
+  else if(act==='confirm')rp('confirm_result',{mid:id});
+  else if(act==='reject')rp('reject_result',{mid:id});
+  else if(act==='approve')rp('approve_result',{mid:id});
+});
+sb.auth.getSession().then(({data})=>{U=data.session?data.session.user:null;start()});
+</script>
+</body>
+</html>
